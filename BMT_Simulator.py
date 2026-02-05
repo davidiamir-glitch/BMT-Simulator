@@ -3,170 +3,162 @@ import time
 import pandas as pd
 
 # VERSION IDENTIFIER
-VERSION = "6.0 - Manual Context Switching Lab"
+VERSION = "7.0 - Process Audit Lab"
 
 st.set_page_config(page_title="The Context Switching Trap", page_icon="🧠", layout="wide")
 
-# 1. Styling for Production Columns
+# 1. Styling
 st.markdown("""
     <style>
-    .stButton>button { width: 100%; border-radius: 5px; height: 3em; }
-    .production-column { 
-        padding: 20px; 
-        border: 2px solid #dee2e6; 
-        border-radius: 10px; 
-        background-color: #ffffff; 
-        min-height: 500px;
-        font-family: monospace;
-        font-size: 18px;
-        line-height: 1.6;
+    .stButton>button { width: 100%; border-radius: 2px; height: 3em; }
+    .input-zone { 
+        padding: 10px; 
+        border: 2px solid #333; 
+        background-color: #fdfdfd; 
+        min-height: 450px;
+        font-family: 'Courier New', monospace;
+        font-size: 20px;
     }
-    .active-header { color: #007bff; font-weight: bold; border-bottom: 2px solid #007bff; margin-bottom: 10px; }
-    .timer-display { font-size: 40px; font-weight: bold; color: #ff4b4b; text-align: center; }
+    .timer-banner { font-size: 50px; color: #ff4b4b; text-align: center; font-family: monospace; border: 2px solid #eee; padding: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. State Persistence
-if 'lab_results' not in st.session_state:
-    st.session_state.lab_results = []
+# 2. State Initialization
+if 'lab_db' not in st.session_state:
+    st.session_state.lab_db = []
 
 if 'step' not in st.session_state:
     st.session_state.update({
         'step': 'setup',
-        'history_n': [],
-        'history_l': [],
-        'history_s': [],
-        'total_actions': 0,
+        'col1_data': [], 'col2_data': [], 'col3_data': [],
+        'milestones': {}, # To store time when 20th N, L, and S are reached
+        'action_log': [], # Sequence of all entries with timestamps
         'user_name': ""
     })
 
-def show_lab_report():
-    if st.session_state.lab_results:
-        st.subheader("📊 Lab Historical Averages")
-        df = pd.DataFrame(st.session_state.lab_results)
-        summary = df.groupby(['Name', 'Mode']).agg(
-            Avg_Time_Sec=('Time', 'mean'),
-            Total_Runs=('Time', 'count')
-        ).round(2).reset_index()
-        st.table(summary)
+def get_milestone_times():
+    """Calculates completion times for the 20th Number, 20th Letter, and 20th Shape."""
+    m = st.session_state.milestones
+    results = {
+        "N20_Time": m.get('N20', 0),
+        "L20_Time": m.get('L20', 0),
+        "S20_Time": m.get('S20', 0)
+    }
+    return results
 
 # --- APP FLOW ---
 
 if st.session_state.step == 'setup':
-    st.title("🧠 The Context Switching Trap")
-    st.caption(f"App Version: {VERSION}")
+    st.title("🧠 Context Switching Audit Lab")
+    st.caption(f"Ver: {VERSION}")
     
     st.markdown("""
-    ### 📝 The Rules
-    Your goal is to complete three columns of **20 symbols each**. 
-    1.  **Column 1 (Numbers):** Sequence 1, 2, 3...
-    2.  **Column 2 (Letters):** Sequence A, B, C...
-    3.  **Column 3 (Shapes):** Sequence ○, □, △, ○, □, △...
-    
-    **Two Modes:**
-    * **Focus Mode:** Complete 20 Numbers, then 20 Letters, then 20 Shapes.
-    * **Chaos Mode:** Switch columns every **4 actions** (e.g., 4 numbers, then 4 letters, then 4 shapes, repeat).
-    
-    *Note: The system will not stop you at 20. You must keep track yourself. Click 'Finish' when you believe you are done.*
+    ### 📝 Lab Instructions
+    1. Fill three columns with 20 symbols each.
+    2. **Numbers:** 1-20 | **Letters:** A-T | **Shapes:** ○, □, △ (Repeating)
+    3. Use the keyboard for Numbers/Letters and the buttons for Shapes.
+    4. **Focus Mode:** Complete one category fully before moving to the next.
+    5. **Chaos Mode:** Switch categories every **4 actions** (e.g., 1-4, then A-D, then 4 shapes).
     """)
-    
-    show_lab_report()
-    name = st.text_input("Participant Name:", placeholder="Enter name...")
-    
-    col1, col2 = st.columns(2)
-    if col1.button("Start Chaos Mode"):
-        st.session_state.update({
-            'mode': 'Chaos', 'step': 'play', 'user_name': name if name else "Guest",
-            'history_n': [], 'history_l': [], 'history_s': [], 'total_actions': 0, 'start_time': time.time()
-        })
+
+    if st.session_state.lab_db:
+        st.subheader("📊 Historical Lab Averages (Per Mode & User)")
+        df_hist = pd.DataFrame(st.session_state.lab_db)
+        st.dataframe(df_hist.groupby(['Name', 'Mode']).mean().drop(columns=['Timestamp'], errors='ignore'))
+
+    name = st.text_input("Participant Name:")
+    c1, c2 = st.columns(2)
+    if c1.button("Start Chaos Simulation"):
+        st.session_state.update({'mode': 'Chaos', 'step': 'play', 'user_name': name, 'start_time': time.time(), 
+                                 'col1_data': [], 'col2_data': [], 'col3_data': [], 'milestones': {}, 'action_log': []})
         st.rerun()
-        
-    if col2.button("Start Focus Mode"):
-        st.session_state.update({
-            'mode': 'Focus', 'step': 'play', 'user_name': name if name else "Guest",
-            'history_n': [], 'history_l': [], 'history_s': [], 'total_actions': 0, 'start_time': time.time()
-        })
+    if c2.button("Start Focus Simulation"):
+        st.session_state.update({'mode': 'Focus', 'step': 'play', 'user_name': name, 'start_time': time.time(),
+                                 'col1_data': [], 'col2_data': [], 'col3_data': [], 'milestones': {}, 'action_log': []})
         st.rerun()
 
 elif st.session_state.step == 'play':
-    st.markdown(f"<p class='timer-display'>{time.time() - st.session_state.start_time:.1f}s</p>", unsafe_allow_html=True)
+    curr_time = time.time() - st.session_state.start_time
+    st.markdown(f"<div class='timer-banner'>{curr_time:.1f}s</div>", unsafe_allow_html=True)
     
-    # Logic for current required column (to guide the UI only, no cues)
-    if st.session_state.mode == "Chaos":
-        cycle = (st.session_state.total_actions // 4) % 3
-        active_col = "Numbers" if cycle == 0 else "Letters" if cycle == 1 else "Shapes"
-    else:
-        if len(st.session_state.history_n) < 20: active_col = "Numbers"
-        elif len(st.session_state.history_l) < 20: active_col = "Letters"
-        else: active_col = "Shapes"
-
-    # UI Production Layout
+    # Grid Layout
     c1, c2, c3 = st.columns(3)
     
-    with c1:
-        st.markdown(f"<div class='active-header'>Numbers {'⬅️' if active_col == 'Numbers' else ''}</div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='production-column'>{'<br>'.join(st.session_state.history_n)}</div>", unsafe_allow_html=True)
-        n_val = st.text_input("Add Number", key=f"n_{st.session_state.total_actions}", label_visibility="collapsed")
-        if n_val:
-            st.session_state.history_n.append(n_val)
-            st.session_state.total_actions += 1
-            st.rerun()
-
-    with c2:
-        st.markdown(f"<div class='active-header'>Letters {'⬅️' if active_col == 'Letters' else ''}</div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='production-column'>{'<br>'.join(st.session_state.history_l)}</div>", unsafe_allow_html=True)
-        l_val = st.text_input("Add Letter", key=f"l_{st.session_state.total_actions}", label_visibility="collapsed")
-        if l_val:
-            st.session_state.history_l.append(l_val.upper())
-            st.session_state.total_actions += 1
-            st.rerun()
-
-    with c3:
-        st.markdown(f"<div class='active-header'>Shapes {'⬅️' if active_col == 'Shapes' else ''}</div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='production-column'>{'<br>'.join(st.session_state.history_s)}</div>", unsafe_allow_html=True)
+    def handle_input(val, col_list):
+        if not val: return
+        timestamp = time.time() - st.session_state.start_time
+        col_list.append(val)
         
+        # Internal Tracking for Milestones
+        flat_list = st.session_state.col1_data + st.session_state.col2_data + st.session_state.col3_data
+        nums = [x for x in flat_list if x.isdigit()]
+        lets = [x for x in flat_list if x.isalpha() and len(x)==1]
+        shps = [x for x in flat_list if x in ['○', '□', '△']]
+        
+        if len(nums) == 20 and 'N20' not in st.session_state.milestones: st.session_state.milestones['N20'] = timestamp
+        if len(lets) == 20 and 'L20' not in st.session_state.milestones: st.session_state.milestones['L20'] = timestamp
+        if len(shps) == 20 and 'S20' not in st.session_state.milestones: st.session_state.milestones['S20'] = timestamp
+        
+        st.session_state.action_log.append({'val': val, 'time': timestamp})
+        st.rerun()
+
+    # Column 1
+    with c1:
+        st.markdown(f"<div class='input-zone'>{'<br>'.join(st.session_state.col1_data)}</div>", unsafe_allow_html=True)
+        v1 = st.text_input("in1", key="v1", label_visibility="collapsed")
+        handle_input(v1, st.session_state.col1_data)
+
+    # Column 2
+    with c2:
+        st.markdown(f"<div class='input-zone'>{'<br>'.join(st.session_state.col2_data)}</div>", unsafe_allow_html=True)
+        v2 = st.text_input("in2", key="v2", label_visibility="collapsed")
+        handle_input(v2, st.session_state.col2_data)
+
+    # Column 3 (Shapes Zone)
+    with c3:
+        st.markdown("<div class='input-zone'>", unsafe_allow_html=True)
+        st.write('<br>'.join(st.session_state.col3_data), unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
         sc1, sc2, sc3 = st.columns(3)
-        if sc1.button("○"):
-            st.session_state.history_s.append("○")
-            st.session_state.total_actions += 1
-            st.rerun()
-        if sc2.button("□"):
-            st.session_state.history_s.append("□")
-            st.session_state.total_actions += 1
-            st.rerun()
-        if sc3.button("△"):
-            st.session_state.history_s.append("△")
-            st.session_state.total_actions += 1
-            st.rerun()
+        if sc1.button("○"): handle_input("○", st.session_state.col3_data)
+        if sc2.button("□"): handle_input("□", st.session_state.col3_data)
+        if sc3.button("△"): handle_input("△", st.session_state.col3_data)
 
     st.divider()
-    if st.button("🏁 FINISH (I am done with all tasks)"):
-        duration = time.time() - st.session_state.start_time
-        st.session_state.lab_results.append({
+    if st.button("🏁 DONE"):
+        final_time = time.time() - st.session_state.start_time
+        m = st.session_state.milestones
+        data = {
             "Name": st.session_state.user_name,
             "Mode": st.session_state.mode,
-            "Time": round(duration, 2),
-            "N_Count": len(st.session_state.history_n),
-            "L_Count": len(st.session_state.history_l),
-            "S_Count": len(st.session_state.history_s)
-        })
+            "Total Time": round(final_time, 2),
+            "N20 (20)": round(m.get('N20', final_time), 2),
+            "L20 (T)": round(m.get('L20', final_time), 2),
+            "S20 (Sq)": round(m.get('S20', final_time), 2),
+            "Timestamp": time.ctime()
+        }
+        st.session_state.lab_db.append(data)
         st.session_state.step = 'summary'
         st.rerun()
 
 elif st.session_state.step == 'summary':
-    st.header(f"🏁 Session Report: {st.session_state.user_name}")
+    st.header(f"🏁 Session Analysis: {st.session_state.user_name}")
     
-    # Analysis of "Spillover" or "Incompleteness"
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Numbers Count", len(st.session_state.history_n), delta=len(st.session_state.history_n)-20)
-    c2.metric("Letters Count", len(st.session_state.history_l), delta=len(st.session_state.history_l)-20)
-    c3.metric("Shapes Count", len(st.session_state.history_s), delta=len(st.session_state.history_s)-20)
+    last_run = st.session_state.lab_db[-1]
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Total Lead Time", f"{last_run['Total Time']}s")
+    col2.metric("Time to Number 20", f"{last_run['N20 (20)']}s")
+    col3.metric("Time to Letter T", f"{last_run['L20 (T)']}s")
+    col4.metric("Time to Shape 20", f"{last_run['S20 (Sq)']}s")
+
+    st.subheader("📋 Audit Table")
+    st.table(pd.DataFrame([last_run]))
 
     
-    
-    st.info("**Quality Audit:** Review the columns above. In Chaos mode, notice if you missed a sequence or double-entered symbols during the transition.")
-    
-    show_lab_report()
+
+    st.markdown("---")
+    st.subheader("📊 Comparative Lab History")
+    st.dataframe(pd.DataFrame(st.session_state.lab_db))
 
     
 
