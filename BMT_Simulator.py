@@ -4,41 +4,13 @@ import pandas as pd
 import streamlit.components.v1 as components
 
 # VERSION IDENTIFIER
-VERSION = "12.2 - Real-Time Keydown Milestone Tracking"
+VERSION = "13.0 - Reconstruction Audit & Quality Report"
 
 st.set_page_config(page_title="Context Switching Lab", page_icon="🧠", layout="wide")
 
-# 1. KEYBOARD & TIMER HEARTBEAT (Captures keystrokes in real-time)
+# 1. TIMER HEARTBEAT
 components.html("""
     <script>
-    const sendMetric = (key, val) => {
-        window.parent.postMessage({
-            type: 'streamlit:setComponentValue',
-            key: key,
-            value: {val: val, ts: Date.now()}
-        }, '*');
-    };
-
-    window.parent.document.addEventListener('keydown', (e) => {
-        if (e.key.length === 1 || e.key === 'Enter') {
-            const doc = window.parent.document;
-            const inputs = doc.querySelectorAll('input[type="text"]');
-            const activeInput = doc.activeElement;
-            
-            // If the user is typing in one of the column inputs
-            if (activeInput && activeInput.tagName === 'INPUT') {
-                const timestamp = Date.now();
-                const value = activeInput.value + e.key;
-                // Send specific task progress back to Streamlit
-                window.parent.postMessage({
-                    type: 'streamlit:setComponentValue',
-                    value: {char: e.key, full: value, ts: timestamp},
-                    is_keydown: true
-                }, '*');
-            }
-        }
-    });
-
     setInterval(() => {
         window.parent.document.querySelector('section.main').dispatchEvent(new CustomEvent('heartbeat'));
     }, 100);
@@ -68,35 +40,46 @@ if 'lab_db' not in st.session_state:
 if 'step' not in st.session_state:
     st.session_state.update({
         'step': 'setup', 'col1': [], 'col2': [], 'col3': [],
-        'action_log': [], 'user_name': "", 'start_time': None,
-        'n_milestone': None, 'l_milestone': None, 's_milestone': None,
-        'numbers_found': 0, 'letters_found': 0
+        'action_log': [], 'user_name': "", 'start_time': None
     })
 
-# 4. Entry Logic
-def process_input(val, col_id):
-    if not val: return
-    ts = time.time() - st.session_state.start_time
+# 4. Deep Audit Logic
+def perform_deep_audit():
+    log = st.session_state.action_log
     
-    # Process space-delimited units
-    units = val.upper().split() if " " in val else ([val.upper()] if val.isdigit() else list(val.upper()))
+    # Timeline Reconstruction
+    n_events = [e for e in log if e['val'].isdigit()]
+    l_events = [e for e in log if e['val'].isalpha() and len(e['val']) == 1]
+    s_events = [e for e in log if e['val'] in ['○', '□', '△']]
     
-    for unit in units:
-        st.session_state.action_log.append({"val": unit, "col": col_id, "time": ts})
-        
-        # Immediate Milestone Check on Submission (Safety Net)
-        if unit.isdigit(): st.session_state.numbers_found += 1
-        elif unit.isalpha() and len(unit) == 1: st.session_state.letters_found += 1
-        
-        # Check for 20th item
-        if st.session_state.numbers_found == 20 and not st.session_state.n_milestone:
-            st.session_state.n_milestone = ts
-        if st.session_state.letters_found == 20 and not st.session_state.l_milestone:
-            st.session_state.l_milestone = ts
-
-        if col_id == 1: st.session_state.col1.append(unit)
-        elif col_id == 2: st.session_state.col2.append(unit)
-        else: st.session_state.col3.append(unit)
+    # Capture timestamp of the 20th entry for each task
+    m_n = n_events[19]['time'] if len(n_events) >= 20 else (log[-1]['time'] if log else 0)
+    m_l = l_events[19]['time'] if len(l_events) >= 20 else (log[-1]['time'] if log else 0)
+    m_s = s_events[19]['time'] if len(s_events) >= 20 else (log[-1]['time'] if log else 0)
+    
+    # Quality Audit
+    defects = []
+    
+    # 1. Count Audit (Target: 20 symbols per column)
+    counts = [len(st.session_state.col1), len(st.session_state.col2), len(st.session_state.col3)]
+    for i, count in enumerate(counts, 1):
+        if count != 20:
+            defects.append(f"Column {i} has {count} symbols (Target: 20)")
+            
+    # 2. Sequence Audit (Target: 1-20, A-T, ○□△ pattern)
+    target_n = [str(i) for i in range(1, 21)]
+    target_l = list("ABCDEFGHIJKLMNOPQRST")
+    target_s = (["○", "□", "△"] * 7)[:20]
+    
+    actual_n = [e['val'] for e in log if e['val'].isdigit()]
+    actual_l = [e['val'] for e in log if e['val'].isalpha() and len(e['val']) == 1]
+    actual_s = [e['val'] for e in log if e['val'] in ['○', '□', '△']]
+    
+    if actual_n[:20] != target_n: defects.append("Number sequence 1-20 is incorrect or incomplete.")
+    if actual_l[:20] != target_l: defects.append("Letter sequence A-T is incorrect or incomplete.")
+    if actual_s[:20] != target_s: defects.append("Shape sequence ○□△ is incorrect or incomplete.")
+    
+    return m_n, m_l, m_s, defects
 
 # --- APP FLOW ---
 
@@ -111,13 +94,16 @@ if st.session_state.step == 'setup':
         df_h = pd.DataFrame(st.session_state.lab_db)
         summary = df_h.groupby(['Participant', 'Mode']).mean(numeric_only=True).round(2)
         st.table(summary)
+        if st.button("🗑️ Clear Lab Data"):
+            st.session_state.lab_db = []
+            st.rerun()
 
     c1, c2 = st.columns(2)
-    if c1.button("Start Chaos Mode (Real-Time Tracking)"):
-        st.session_state.update({'mode': 'Chaos', 'step': 'play', 'user_name': name if name else "Guest", 'start_time': time.time(), 'col1': [], 'col2': [], 'col3': [], 'action_log': [], 'n_milestone': None, 'l_milestone': None, 's_milestone': None, 'numbers_found': 0, 'letters_found': 0})
+    if c1.button("Start Chaos Mode"):
+        st.session_state.update({'mode': 'Chaos', 'step': 'play', 'user_name': name if name else "Guest", 'start_time': time.time(), 'col1': [], 'col2': [], 'col3': [], 'action_log': []})
         st.rerun()
     if c2.button("Start Focus Mode"):
-        st.session_state.update({'mode': 'Focus', 'step': 'play', 'user_name': name if name else "Guest", 'start_time': time.time(), 'col1': [], 'col2': [], 'col3': [], 'action_log': [], 'n_milestone': None, 'l_milestone': None, 's_milestone': None, 'numbers_found': 0, 'letters_found': 0})
+        st.session_state.update({'mode': 'Focus', 'step': 'play', 'user_name': name if name else "Guest", 'start_time': time.time(), 'col1': [], 'col2': [], 'col3': [], 'action_log': []})
         st.rerun()
 
 elif st.session_state.step == 'play':
@@ -131,34 +117,37 @@ elif st.session_state.step == 'play':
             st.markdown(f"<div class='input-zone'>{items_html}</div>", unsafe_allow_html=True)
             v = st.text_input(f"In{i}", key=f"in{i}_{len(col_data)}", label_visibility="collapsed")
             if v:
-                process_input(v, i)
+                ts = time.time() - st.session_state.start_time
+                units = v.upper().split() if " " in v else ([v.upper()] if v.isdigit() else list(v.upper()))
+                for unit in units:
+                    st.session_state.action_log.append({"val": unit, "col": i, "time": ts})
+                    if i == 1: st.session_state.col1.append(unit)
+                    elif i == 2: st.session_state.col2.append(unit)
+                    else: st.session_state.col3.append(unit)
                 st.rerun()
             
             sc1, sc2, sc3 = st.columns(3)
-            if sc1.button("○", key=f"c{i}_s1"): 
-                process_input("○", i)
-                if len([x for x in st.session_state.col1+st.session_state.col2+st.session_state.col3 if x == "○"]) + \
-                   len([x for x in st.session_state.col1+st.session_state.col2+st.session_state.col3 if x == "□"]) + \
-                   len([x for x in st.session_state.col1+st.session_state.col2+st.session_state.col3 if x == "△"]) == 20:
-                    st.session_state.s_milestone = elapsed
+            def add_shp(s, cid):
+                st.session_state.action_log.append({"val": s, "col": cid, "time": time.time() - st.session_state.start_time})
+                if cid == 1: st.session_state.col1.append(s)
+                elif cid == 2: st.session_state.col2.append(s)
+                else: st.session_state.col3.append(s)
                 st.rerun()
-            if sc2.button("□", key=f"c{i}_s2"): 
-                process_input("□", i)
-                st.rerun()
-            if sc3.button("△", key=f"c{i}_s3"): 
-                process_input("△", i)
-                st.rerun()
+
+            if sc1.button("○", key=f"c{i}_s1"): add_shp("○", i)
+            if sc2.button("□", key=f"c{i}_s2"): add_shp("□", i)
+            if sc3.button("△", key=f"c{i}_s3"): add_shp("△", i)
 
     st.divider()
     if st.button("🏁 DONE"):
-        final_time = time.time() - st.session_state.start_time
+        m_n, m_l, m_s, defects = perform_deep_audit()
         st.session_state.lab_db.append({
             "Participant": st.session_state.user_name, "Mode": st.session_state.mode,
-            "Total Time": round(final_time, 2),
-            "Task 1 (N=20)": round(st.session_state.n_milestone if st.session_state.n_milestone else final_time, 2),
-            "Task 2 (L=T)": round(st.session_state.l_milestone if st.session_state.l_milestone else final_time, 2),
-            "Task 3 (S=20)": round(st.session_state.s_milestone if st.session_state.s_milestone else final_time, 2)
+            "Total Time": round(time.time() - st.session_state.start_time, 2),
+            "N=20 (Actual)": round(m_n, 2), "L=T (Actual)": round(m_l, 2), "S=20 (Actual)": round(m_s, 2),
+            "Defects": len(defects)
         })
+        st.session_state.defects = defects
         st.session_state.step = 'summary'
         st.rerun()
 
@@ -167,12 +156,20 @@ elif st.session_state.step == 'summary':
     res = st.session_state.lab_db[-1]
     
     
-
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total Lead Time", f"{res['Total Time']}s")
-    c2.metric("N=20 (Actual)", f"{res['Task 1 (N=20)']}s")
-    c3.metric("L=T (Actual)", f"{res['Task 2 (L=T)']}s")
-    c4.metric("S=20 (Actual)", f"{res['Task 3 (S=20)']}s")
+    c2.metric("N=20 (Completion)", f"{res['N=20 (Actual)']}s")
+    c3.metric("L=T (Completion)", f"{res['L=T (Actual)']}s")
+    c4.metric("S=20 (Completion)", f"{res['S=20 (Actual)']}s")
+
+    st.markdown("---")
+    st.subheader("🎯 Quality Audit Report")
+    if not st.session_state.defects:
+        st.markdown("<p class='audit-pass'>✅ Quality Target Met: No defects detected.</p>", unsafe_allow_html=True)
+    else:
+        st.markdown(f"<p class='audit-fail'>❌ Quality Defects Detected: {len(st.session_state.defects)}</p>", unsafe_allow_html=True)
+        for d in st.session_state.defects:
+            st.write(f"- {d}")
 
     st.subheader("📊 Comparative Lab Data")
     df = pd.DataFrame(st.session_state.lab_db)
@@ -180,6 +177,5 @@ elif st.session_state.step == 'summary':
     st.table(summary)
 
     
-
     if st.button("Return to Setup"):
         st.session_state.step = 'setup'; st.rerun()
