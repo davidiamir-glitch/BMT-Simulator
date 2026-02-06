@@ -1,152 +1,121 @@
 import streamlit as st
 import time
+import random
 import pandas as pd
-import streamlit.components.v1 as components
 
-# VERSION IDENTIFIER
-VERSION = "10.0 - Vertical Stream Audit"
+# Modern UI Config
+st.set_page_config(page_title="Multitasking Performance Lab", page_icon="🧠", layout="centered")
 
-st.set_page_config(page_title="Context Switching Lab", page_icon="🧠", layout="wide")
-
-# 1. TIMER HEARTBEAT
-components.html("""
-    <script>
-    setInterval(() => {
-        window.parent.document.querySelector('section.main').dispatchEvent(new CustomEvent('heartbeat'));
-    }, 100);
-    </script>
-""", height=0)
-
-# 2. Styling for Vertical Columns
+# CSS to ensure the task box handles double digits without vertical stacking
 st.markdown("""
     <style>
-    .stButton>button { width: 100%; border-radius: 2px; height: 3em; background-color: #f0f2f6; font-size: 18px;}
-    .input-zone { 
-        padding: 15px; 
-        border: 2px solid #333; 
-        background-color: #ffffff; 
-        height: 600px;
-        overflow-y: auto;
-        font-family: 'Courier New', monospace;
-        font-size: 24px;
-        line-height: 1.2;
-        display: flex;
-        flex-direction: column;
+    .task-display {
+        font-size: 42px !important;
+        font-weight: bold;
+        color: #007bff;
+        text-align: center;
+        padding: 20px;
+        border: 2px solid #007bff;
+        border-radius: 10px;
+        background-color: #ffffff;
+        display: inline-block;
+        min-width: 200px;
+        white-space: nowrap; /* Prevents digits from wrapping vertically */
     }
-    .symbol-row { margin-bottom: 2px; }
-    .timer-banner { font-size: 60px; color: #ff4b4b; text-align: center; font-family: monospace; font-weight: bold; margin-bottom: 20px;}
+    .stButton>button { width: 100%; border-radius: 8px; height: 3.5em; background-color: #007bff; color: white; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
-# 3. State Management
-if 'lab_db' not in st.session_state:
-    st.session_state.lab_db = []
-
 if 'step' not in st.session_state:
-    st.session_state.update({
-        'step': 'setup',
-        'col1': [], 'col2': [], 'col3': [],
-        'milestones': {},
-        'user_name': "",
-        'start_time': None
-    })
+    st.session_state.step = 'setup'
+    st.session_state.results = []
 
-# 4. Input Logic: Forces everything to be vertical
-def add_symbols_vertically(input_str, col_id):
-    timestamp = time.time() - st.session_state.start_time
-    # Break string into individual characters (e.g., '1234' -> ['1','2','3','4'])
-    chars = list(input_str)
-    
-    target_col = st.session_state.col1 if col_id == 1 else st.session_state.col2 if col_id == 2 else st.session_state.col3
-    for char in chars:
-        target_col.append(char)
-    
-    # Milestone Tracking
-    all_data = st.session_state.col1 + st.session_state.col2 + st.session_state.col3
-    nums = [x for x in all_data if x.isdigit()]
-    lets = [x for x in all_data if x.isalpha() and len(x)==1]
-    shps = [x for x in all_data if x in ['○', '□', '△']]
-    
-    if len(nums) >= 20 and 'N20' not in st.session_state.milestones: st.session_state.milestones['N20'] = timestamp
-    if len(lets) >= 20 and 'L20' not in st.session_state.milestones: st.session_state.milestones['L20'] = timestamp
-    if len(shps) >= 20 and 'S20' not in st.session_state.milestones: st.session_state.milestones['S20'] = timestamp
+def start_sim(mode):
+    st.session_state.mode = mode
+    st.session_state.tasks_done = 0
+    st.session_state.errors = 0
+    st.session_state.start_time = time.time()
+    st.session_state.step = 'playing'
+    generate_task()
 
-# --- APP FLOW ---
+def generate_task():
+    types = ["Math", "Typing"]
+    if st.session_state.mode == "Multitasking":
+        st.session_state.current_type = random.choice(types)
+    else:
+        st.session_state.current_type = "Math" if st.session_state.tasks_done < 5 else "Typing"
+    
+    if st.session_state.current_type == "Math":
+        n1, n2 = random.randint(10, 50), random.randint(10, 50)
+        st.session_state.task_desc = f"{n1} + {n2}"
+        st.session_state.answer = str(n1 + n2)
+    else:
+        word = random.choice(["SYSTEMS", "PROCESS", "FLOW", "WASTE"])
+        st.session_state.task_desc = f"{word}"
+        st.session_state.answer = word
+
+# --- UI LOGIC ---
 
 if st.session_state.step == 'setup':
-    st.title("🧠 Context Switching Audit Lab")
-    st.caption(f"Ver: {VERSION}")
-    
-    st.markdown("""
-    ### 📝 Rules
-    * **Tasks:** Numbers (1-20), Letters (A-T), Shapes (○, □, △)
-    * **Chaos Mode:** Switch tasks every **4 symbols**. Switch columns every **20 symbols**.
-    * **Focus Mode:** Complete each category (20 symbols) fully before moving to the next.
-    """)
-
+    st.title("🧠 Multitasking Performance Lab")
+    st.write("Analyze the 'Switching Cost' in your workflow.")
     name = st.text_input("Participant Name:", placeholder="Enter your name...")
-    c1, c2 = st.columns(2)
-    if c1.button("Start Chaos Simulation"):
-        st.session_state.update({'mode': 'Chaos', 'step': 'play', 'user_name': name if name else "Guest", 'start_time': time.time(), 'col1': [], 'col2': [], 'col3': [], 'milestones': {}})
-        st.rerun()
-    if c2.button("Start Focus Simulation"):
-        st.session_state.update({'mode': 'Focus', 'step': 'play', 'user_name': name if name else "Guest", 'start_time': time.time(), 'col1': [], 'col2': [], 'col3': [], 'milestones': {}})
-        st.rerun()
-
-elif st.session_state.step == 'play':
-    elapsed = time.time() - st.session_state.start_time
-    st.markdown(f"<div class='timer-banner'>{elapsed:.1f}s</div>", unsafe_allow_html=True)
     
-    cols = st.columns(3)
-    for i, col_data in enumerate([st.session_state.col1, st.session_state.col2, st.session_state.col3], 1):
-        with cols[i-1]:
-            # Vertical Display Box
-            items_html = "".join([f"<div class='symbol-row'>{item}</div>" for item in col_data])
-            st.markdown(f"<div class='input-zone'>{items_html}</div>", unsafe_allow_html=True)
-            
-            # Input Field
-            v = st.text_input(f"Col {i} Input", key=f"input_col{i}_{len(col_data)}", label_visibility="collapsed")
-            if v:
-                add_symbols_vertically(v.upper(), i)
-                st.rerun()
-            
-            # Shape Buttons
-            sc1, sc2, sc3 = st.columns(3)
-            if sc1.button("○", key=f"c{i}_s1"): add_symbols_vertically("○", i); st.rerun()
-            if sc2.button("□", key=f"c{i}_s2"): add_symbols_vertically("□", i); st.rerun()
-            if sc3.button("△", key=f"c{i}_s3"): add_symbols_vertically("△", i); st.rerun()
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Start Multitasking (Mixed)"):
+            st.session_state.user_name = name if name else "Expert"
+            start_sim("Multitasking")
+            st.rerun()
+    with col2:
+        if st.button("Start Focus Mode (Sequential)"):
+            st.session_state.user_name = name if name else "Expert"
+            start_sim("Focus Mode")
+            st.rerun()
 
-    st.divider()
-    if st.button("🏁 DONE"):
-        final_time = time.time() - st.session_state.start_time
-        m = st.session_state.milestones
-        st.session_state.lab_db.append({
-            "Participant": st.session_state.user_name,
-            "Mode": st.session_state.mode,
-            "Total Time": round(final_time, 2),
-            "N=20": round(m.get('N20', final_time), 2),
-            "L=T": round(m.get('L20', final_time), 2),
-            "S=20th": round(m.get('S20', final_time), 2)
-        })
-        st.session_state.step = 'summary'
-        st.rerun()
+elif st.session_state.step == 'playing':
+    st.write(f"**Mode:** {st.session_state.mode} | Task {st.session_state.tasks_done + 1}/10")
+    
+    # Using a div with 'task-display' class to keep digits together
+    st.markdown(f'<div class="task-display">{st.session_state.task_desc}</div>', unsafe_allow_html=True)
+    
+    with st.form(key=f"form_{st.session_state.tasks_done}"):
+        # We strip spaces in case the user types "1 1" for "11"
+        ans = st.text_input("Enter Answer:").replace(" ", "").upper()
+        submit = st.form_submit_button("Submit Answer")
+        
+        if submit:
+            if ans == st.session_state.answer:
+                st.session_state.tasks_done += 1
+                if st.session_state.mode == "Multitasking":
+                    time.sleep(0.3) # Simulating context switch cost
+                
+                if st.session_state.tasks_done >= 10:
+                    st.session_state.duration = time.time() - st.session_state.start_time
+                    st.session_state.results.append({
+                        "Mode": st.session_state.mode, 
+                        "Time (s)": round(st.session_state.duration, 2),
+                        "Errors": st.session_state.errors
+                    })
+                    st.session_state.step = 'summary'
+                else:
+                    generate_task()
+                st.rerun()
+            else:
+                st.session_state.errors += 1
+                st.error("Incorrect. Try again!")
 
 elif st.session_state.step == 'summary':
-    st.header(f"🏁 Lab Results: {st.session_state.user_name}")
-    last = st.session_state.lab_db[-1]
+    st.header(f"Results for {st.session_state.user_name}")
+    df = pd.DataFrame(st.session_state.results)
+    st.table(df)
     
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total Time", f"{last['Total Time']}s")
-    c2.metric("Task 1 (N)", f"{last['N=20']}s")
-    c3.metric("Task 2 (L)", f"{last['L=T']}s")
-    c4.metric("Task 3 (S)", f"{last['S=20th']}s")
+    # The Gap Analysis
+    st.write("### Context Switching Cost Analysis")
+    st.bar_chart(df.set_index('Mode')['Time (s)'])
+    
+    
 
-    st.subheader("📊 Lab Historical Averages")
-    df = pd.DataFrame(st.session_state.lab_db)
-    # Pivot to show Name and Mode clearly
-    summary = df.groupby(['Participant', 'Mode']).mean().round(2)
-    st.table(summary)
-
-        
-    if st.button("Return to Setup"):
-        st.session_state.step = 'setup'; st.rerun()
+    if st.button("Restart Simulation"):
+        st.session_state.step = 'setup'
+        st.rerun()
