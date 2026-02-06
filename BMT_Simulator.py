@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit.components.v1 as components
 
 # VERSION IDENTIFIER
-VERSION = "11.2 - Indentation & Data Segregation Fix"
+VERSION = "11.3 - Variable Sync & Segmented Reporting"
 
 st.set_page_config(page_title="Context Switching Lab", page_icon="🧠", layout="wide")
 
@@ -55,11 +55,9 @@ if 'step' not in st.session_state:
 def add_symbols_vertically(input_str, col_id):
     timestamp = time.time() - st.session_state.start_time
     
-    # Split by spaces to keep multi-digit numbers together
     if " " in input_str:
         units = input_str.split()
     else:
-        # Keep numeric strings like '11' as one unit; split 'ABCD' into chars
         units = [input_str] if input_str.isdigit() else list(input_str)
     
     target_col = st.session_state.col1 if col_id == 1 else st.session_state.col2 if col_id == 2 else st.session_state.col3
@@ -86,7 +84,7 @@ if st.session_state.step == 'setup':
     ### 📝 Rules
     * **Tasks:** Numbers (1-20), Letters (A-T), Shapes (○, □, △)
     * **Chaos Mode:** Switch tasks every **4 symbols**. Switch columns every **20 symbols**.
-    * **Tip:** Separate numbers with a **space** in the input field to keep them together (e.g., `11 12 13 14`).
+    * **Tip:** Separate numbers with a **space** in the input field to keep them together.
     """)
 
     name = st.text_input("Participant Name:", placeholder="Enter name...")
@@ -94,8 +92,7 @@ if st.session_state.step == 'setup':
     if st.session_state.lab_db:
         st.subheader("📊 Lab Historical Averages")
         df_hist = pd.DataFrame(st.session_state.lab_db)
-        # Group by Participant and Mode as requested
-        summary = df_hist.groupby(['Participant', 'Mode']).mean().round(2)
+        summary = df_hist.groupby(['Participant', 'Mode']).mean(numeric_only=True).round(2)
         st.table(summary)
         if st.button("🗑️ Clear All Lab Data"):
             st.session_state.lab_db = []
@@ -114,7 +111,6 @@ elif st.session_state.step == 'play':
     st.markdown(f"<div class='timer-banner'>{elapsed:.1f}s</div>", unsafe_allow_html=True)
     
     cols = st.columns(3)
-    # The loop that had the indentation error:
     for i, col_data in enumerate([st.session_state.col1, st.session_state.col2, st.session_state.col3], 1):
         with cols[i-1]:
             items_html = "".join([f"<div class='symbol-row'>{item}</div>" for item in col_data])
@@ -125,15 +121,9 @@ elif st.session_state.step == 'play':
                 st.rerun()
             
             sc1, sc2, sc3 = st.columns(3)
-            if sc1.button("○", key=f"c{i}_s1"): 
-                add_symbols_vertically("○", i)
-                st.rerun()
-            if sc2.button("□", key=f"c{i}_s2"): 
-                add_symbols_vertically("□", i)
-                st.rerun()
-            if sc3.button("△", key=f"c{i}_s3"): 
-                add_symbols_vertically("△", i)
-                st.rerun()
+            if sc1.button("○", key=f"c{i}_s1"): add_symbols_vertically("○", i); st.rerun()
+            if sc2.button("□", key=f"c{i}_s2"): add_symbols_vertically("□", i); st.rerun()
+            if sc3.button("△", key=f"c{i}_s3"): add_symbols_vertically("△", i); st.rerun()
 
     st.divider()
     if st.button("🏁 DONE"):
@@ -152,4 +142,26 @@ elif st.session_state.step == 'play':
 
 elif st.session_state.step == 'summary':
     st.header(f"🏁 Lab Results: {st.session_state.user_name}")
-    last = st.session_state.lab
+    
+    # FIXED: Using lab_db to avoid AttributeError
+    if st.session_state.lab_db:
+        last = st.session_state.lab_db[-1]
+        
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Total Time", f"{last['Total Time']}s")
+        c2.metric("Task 1 (N=20)", f"{last['N=20']}s")
+        c3.metric("Task 2 (L=T)", f"{last['L=T']}s")
+        c4.metric("Task 3 (S=20)", f"{last['S=20th']}s")
+
+    
+
+    st.subheader("📊 Lab Historical Averages")
+    df = pd.DataFrame(st.session_state.lab_db)
+    summary = df.groupby(['Participant', 'Mode']).mean(numeric_only=True).round(2)
+    st.table(summary)
+
+    
+
+    if st.button("Return to Setup"):
+        st.session_state.step = 'setup'
+        st.rerun()
