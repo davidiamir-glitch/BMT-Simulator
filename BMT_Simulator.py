@@ -4,12 +4,11 @@ import pandas as pd
 import streamlit.components.v1 as components
 
 # VERSION IDENTIFIER
-VERSION = "15.0 - Real-Time Keystroke Milestone Audit"
+VERSION = "15.1 - Triple-Lock Real-Time Audit"
 
 st.set_page_config(page_title="Context Switching Lab", page_icon="🧠", layout="wide")
 
-# 1. REAL-TIME KEYBOARD LISTENER
-# This script captures the EXACT moment '0' (for 20) or 'T' is pressed.
+# 1. TRIPLE-LOCK KEYBOARD LISTENER
 components.html("""
     <script>
     const doc = window.parent.document;
@@ -17,15 +16,13 @@ components.html("""
         const timestamp = Date.now();
         const key = e.key.toUpperCase();
         
-        // Notify Streamlit of the specific keystroke and time
         window.parent.postMessage({
             type: 'streamlit:setComponentValue',
-            key: 'keypress_event',
+            key: 'raw_keypress',
             value: {key: key, ts: timestamp}
         }, '*');
     });
 
-    // Heartbeat to keep timer fluid
     setInterval(() => {
         window.parent.document.querySelector('section.main').dispatchEvent(new CustomEvent('heartbeat'));
     }, 100);
@@ -35,7 +32,7 @@ components.html("""
 # 2. Styling
 st.markdown("""
     <style>
-    .stButton>button { width: 100%; border-radius: 2px; height: 3em; background-color: #f0f2f6; font-size: 18px;}
+    .stButton>button { width: 100%; border-radius: 2px; height: 3.5em; background-color: #f0f2f6; font-size: 18px;}
     .input-zone { 
         padding: 15px; border: 2px solid #333; background-color: #ffffff; 
         height: 600px; overflow-y: auto; font-family: 'Courier New', monospace;
@@ -56,14 +53,8 @@ if 'step' not in st.session_state:
     st.session_state.update({
         'step': 'setup', 'col1': [], 'col2': [], 'col3': [],
         'user_name': "", 'start_time': None, 'start_ts_ms': 0,
-        'n20_ts': None, 'lt_ts': None, 's20_ts': None
+        'n20_lock': None, 'lt_lock': None, 's20_lock': None
     })
-
-# 4. Input Processing
-def add_to_system(val, col_id):
-    if col_id == 1: st.session_state.col1.append(val)
-    elif col_id == 2: st.session_state.col2.append(val)
-    else: st.session_state.col3.append(val)
 
 # --- APP FLOW ---
 
@@ -74,39 +65,41 @@ if st.session_state.step == 'setup':
     name = st.text_input("Participant Name:", placeholder="Enter name...")
     
     if st.session_state.lab_db:
-        st.subheader("📊 Historical Performance Comparison")
+        st.subheader("📊 Lab Historical Averages")
         df_h = pd.DataFrame(st.session_state.lab_db)
         summary = df_h.groupby(['Participant', 'Mode']).mean(numeric_only=True).round(2)
         st.table(summary)
+        if st.button("🗑️ Reset Database"):
+            st.session_state.lab_db = []
+            st.rerun()
 
     c1, c2 = st.columns(2)
     if c1.button("Start Chaos Mode"):
         st.session_state.update({'mode': 'Chaos', 'step': 'play', 'user_name': name if name else "Guest", 
                                  'start_time': time.time(), 'start_ts_ms': int(time.time() * 1000),
                                  'col1': [], 'col2': [], 'col3': [],
-                                 'n20_ts': None, 'lt_ts': None, 's20_ts': None})
+                                 'n20_lock': None, 'lt_lock': None, 's20_lock': None})
         st.rerun()
     if c2.button("Start Focus Mode"):
         st.session_state.update({'mode': 'Focus', 'step': 'play', 'user_name': name if name else "Guest", 
                                  'start_time': time.time(), 'start_ts_ms': int(time.time() * 1000),
                                  'col1': [], 'col2': [], 'col3': [],
-                                 'n20_ts': None, 'lt_ts': None, 's20_ts': None})
+                                 'n20_lock': None, 'lt_lock': None, 's20_lock': None})
         st.rerun()
 
 elif st.session_state.step == 'play':
-    # Catch Keypress events from JS component
-    key_event = st.session_state.get('keypress_event')
-    if key_event:
-        char = key_event['key']
-        ts_ms = key_event['ts']
-        relative_sec = (ts_ms - st.session_state.start_ts_ms) / 1000.0
+    # Real-time Key Capture with Lock Logic
+    kp = st.session_state.get('raw_keypress')
+    if kp:
+        char = kp['key']
+        rel_time = (kp['ts'] - st.session_state.start_ts_ms) / 1000.0
         
-        # LOGIC: Stop N20 timer if '0' is pressed (assuming user typed 20)
-        if char == '0' and not st.session_state.n20_ts:
-            st.session_state.n20_ts = relative_sec
-        # LOGIC: Stop LT timer if 'T' is pressed
-        if char == 'T' and not st.session_state.lt_ts:
-            st.session_state.lt_ts = relative_sec
+        # TASK 1 LOCK: Only stops when '0' is hit for the first time
+        if char == '0' and st.session_state.n20_lock is None:
+            st.session_state.n20_lock = rel_time
+        # TASK 2 LOCK: Only stops when 'T' is hit for the first time
+        if char == 'T' and st.session_state.lt_lock is None:
+            st.session_state.lt_lock = rel_time
 
     elapsed = time.time() - st.session_state.start_time
     st.markdown(f"<div class='timer-banner'>{elapsed:.1f}s</div>", unsafe_allow_html=True)
@@ -116,19 +109,27 @@ elif st.session_state.step == 'play':
         with cols[i-1]:
             items_html = "".join([f"<div class='symbol-row'>{item}</div>" for item in col_data])
             st.markdown(f"<div class='input-zone'>{items_html}</div>", unsafe_allow_html=True)
-            v = st.text_input(f"In{i}", key=f"in{i}_{len(col_data)}", label_visibility="collapsed")
+            v = st.text_input(f"Col{i}", key=f"in{i}_{len(col_data)}", label_visibility="collapsed")
             if v:
+                # Delimited processing
                 units = v.upper().split() if " " in v else ([v.upper()] if v.isdigit() else list(v.upper()))
-                for unit in units: add_to_system(unit, i)
+                for unit in units:
+                    if i == 1: st.session_state.col1.append(unit)
+                    elif i == 2: st.session_state.col2.append(unit)
+                    else: st.session_state.col3.append(unit)
                 st.rerun()
             
             sc1, sc2, sc3 = st.columns(3)
             def add_shp(s, cid):
-                add_to_system(s, cid)
-                # Check if this is the 20th shape overall
+                ts_now = time.time() - st.session_state.start_time
+                if cid == 1: st.session_state.col1.append(s)
+                elif cid == 2: st.session_state.col2.append(s)
+                else: st.session_state.col3.append(s)
+                
+                # TASK 3 LOCK: Records time of every shape, but the final value will be the 20th
                 all_shps = [x for x in st.session_state.col1+st.session_state.col2+st.session_state.col3 if x in ['○', '□', '△']]
-                if len(all_shps) >= 20 and not st.session_state.s20_ts:
-                    st.session_state.s20_ts = time.time() - st.session_state.start_time
+                if len(all_shps) >= 20 and st.session_state.s20_lock is None:
+                    st.session_state.s20_lock = ts_now
                 st.rerun()
 
             if sc1.button("○", key=f"c{i}_s1"): add_shp("○", i)
@@ -139,18 +140,18 @@ elif st.session_state.step == 'play':
     if st.button("🏁 DONE"):
         final_time = time.time() - st.session_state.start_time
         
-        # Quality Audit
+        # Quality Check
         defects = []
-        if len(st.session_state.col1) != 20: defects.append(f"Col 1 Count: {len(st.session_state.col1)}")
-        if len(st.session_state.col2) != 20: defects.append(f"Col 2 Count: {len(st.session_state.col2)}")
-        if len(st.session_state.col3) != 20: defects.append(f"Col 3 Count: {len(st.session_state.col3)}")
-        
+        if len(st.session_state.col1) != 20: defects.append(f"Col 1 Count mismatch")
+        if len(st.session_state.col2) != 20: defects.append(f"Col 2 Count mismatch")
+        if len(st.session_state.col3) != 20: defects.append(f"Col 3 Count mismatch")
+
         st.session_state.lab_db.append({
             "Participant": st.session_state.user_name, "Mode": st.session_state.mode,
             "Total Time": round(final_time, 2),
-            "N=20 Time": round(st.session_state.n20_ts if st.session_state.n20_ts else final_time, 2),
-            "L=T Time": round(st.session_state.lt_ts if st.session_state.lt_ts else final_time, 2),
-            "S=20 Time": round(st.session_state.s20_ts if st.session_state.s20_ts else final_time, 2),
+            "N=20 Time": round(st.session_state.n20_lock if st.session_state.n20_lock else final_time, 2),
+            "L=T Time": round(st.session_state.lt_lock if st.session_state.lt_lock else final_time, 2),
+            "S=20 Time": round(st.session_state.s20_lock if st.session_state.s20_lock else final_time, 2),
             "Defects": len(defects)
         })
         st.session_state.current_defects = defects
@@ -158,21 +159,23 @@ elif st.session_state.step == 'play':
         st.rerun()
 
 elif st.session_state.step == 'summary':
-    st.header(f"🏁 Final Audit: {st.session_state.user_name}")
+    st.header(f"🏁 Session Analysis: {st.session_state.user_name}")
     res = st.session_state.lab_db[-1]
     
+    
+
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total Time", f"{res['Total Time']}s")
-    c2.metric("Task 1 (N=20)", f"{res['N=20 Time']}s")
-    c3.metric("Task 2 (L=T)", f"{res['L=T Time']}s")
-    c4.metric("Task 3 (S=20)", f"{res['S=20 Time']}s")
+    c1.metric("Total Lead Time", f"{res['Total Time']}s")
+    c2.metric("Task 1 (Numbers)", f"{res['N=20 Time']}s")
+    c3.metric("Task 2 (Letters)", f"{res['L=T Time']}s")
+    c4.metric("Task 3 (Shapes)", f"{res['S=20 Time']}s")
 
     st.markdown("---")
     st.subheader("🎯 Quality Audit Report")
     if res['Defects'] == 0:
-        st.markdown("<p class='audit-pass'>✅ Quality Target Met: 3 columns of 20 symbols each.</p>", unsafe_allow_html=True)
+        st.markdown("<p class='audit-pass'>✅ No defects detected for this run.</p>", unsafe_allow_html=True)
     else:
-        st.markdown(f"<p class='audit-fail'>❌ Quality Defects Found: {int(res['Defects'])}</p>", unsafe_allow_html=True)
+        st.markdown(f"<p class='audit-fail'>❌ Defects: {int(res['Defects'])}</p>", unsafe_allow_html=True)
         for d in st.session_state.current_defects:
             st.write(f"- {d}")
 
