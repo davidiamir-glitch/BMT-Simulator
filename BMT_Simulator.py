@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit.components.v1 as components
 
 # VERSION IDENTIFIER
-VERSION = "11.0 - Delimited Vertical Audit"
+VERSION = "11.1 - Delimited Vertical Audit (Fix)"
 
 st.set_page_config(page_title="Context Switching Lab", page_icon="🧠", layout="wide")
 
@@ -51,24 +51,23 @@ if 'step' not in st.session_state:
         'start_time': None
     })
 
-# 4. FIXED Input Logic: Respects spaces for whole numbers
+# 4. Input Logic: Respects spaces for whole numbers (e.g. '11 12')
 def add_symbols_vertically(input_str, col_id):
     timestamp = time.time() - st.session_state.start_time
     
-    # Split by spaces to keep numbers like '11' together
-    # If no spaces, it will still process as a single unit or individual chars
+    # Split by spaces to keep multi-digit numbers together
     if " " in input_str:
         units = input_str.split()
     else:
-        # If it's a single string like 'ABCD', split into chars
-        # If it's '11', keep it as '11'
+        # If it's a numeric string like '11', keep it as one unit
+        # Otherwise (like 'ABCD'), split into characters
         units = [input_str] if input_str.isdigit() else list(input_str)
     
     target_col = st.session_state.col1 if col_id == 1 else st.session_state.col2 if col_id == 2 else st.session_state.col3
     for unit in units:
         target_col.append(unit)
     
-    # Milestone Tracking (Numbers, Letters, Shapes)
+    # Milestone Tracking
     all_data = st.session_state.col1 + st.session_state.col2 + st.session_state.col3
     nums = [x for x in all_data if x.isdigit()]
     lets = [x for x in all_data if x.isalpha() and len(x)==1]
@@ -88,7 +87,7 @@ if st.session_state.step == 'setup':
     ### 📝 Rules
     * **Tasks:** Numbers (1-20), Letters (A-T), Shapes (○, □, △)
     * **Chaos Mode:** Switch tasks every **4 symbols**. Switch columns every **20 symbols**.
-    * **Tip:** Separate your numbers with a **space** in the input field to keep them together (e.g., `11 12 13 14`).
+    * **Tip:** Separate numbers with a **space** in the input field to keep them together (e.g., `11 12 13 14`).
     """)
 
     name = st.text_input("Participant Name:", placeholder="Enter name...")
@@ -115,33 +114,3 @@ elif st.session_state.step == 'play':
     
     cols = st.columns(3)
     for i, col_data in enumerate([st.session_state.col1, st.session_state.col2, st.session_state.col3], 1):
-        with cols[i-1]:
-            items_html = "".join([f"<div class='symbol-row'>{item}</div>" for item in col_data])
-            st.markdown(f"<div class='input-zone'>{items_html}</div>", unsafe_allow_html=True)
-            v = st.text_input(f"Col {i} Input", key=f"input_col{i}_{len(col_data)}", label_visibility="collapsed")
-            if v:
-                add_symbols_vertically(v.upper(), i)
-                st.rerun()
-            
-            sc1, sc2, sc3 = st.columns(3)
-            if sc1.button("○", key=f"c{i}_s1"): add_symbols_vertically("○", i); st.rerun()
-            if sc2.button("□", key=f"c{i}_s2"): add_symbols_vertically("□", i); st.rerun()
-            if sc3.button("△", key=f"c{i}_s3"): add_symbols_vertically("△", i); st.rerun()
-
-    st.divider()
-    if st.button("🏁 DONE"):
-        final_time = time.time() - st.session_state.start_time
-        m = st.session_state.milestones
-        st.session_state.lab_db.append({
-            "Participant": st.session_state.user_name,
-            "Mode": st.session_state.mode,
-            "Total Time": round(final_time, 2),
-            "N=20": round(m.get('N20', final_time), 2),
-            "L=T": round(m.get('L20', final_time), 2),
-            "S=20th": round(m.get('S20', final_time), 2)
-        })
-        st.session_state.step = 'summary'
-        st.rerun()
-
-elif st.session_state.step == 'summary':
-    st.header(f"🏁 Lab Results: {st.session_state
