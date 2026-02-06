@@ -4,11 +4,11 @@ import pandas as pd
 import streamlit.components.v1 as components
 
 # VERSION IDENTIFIER
-VERSION = "16.0 - Cognitive Milestone Snapshot"
+VERSION = "16.1 - Sequential Micro-Timing Audit"
 
 st.set_page_config(page_title="Context Switching Lab", page_icon="🧠", layout="wide")
 
-# 1. TIMER HEARTBEAT (Forces UI to stay alive)
+# 1. TIMER HEARTBEAT
 components.html("""
     <script>
     setInterval(() => {
@@ -20,7 +20,7 @@ components.html("""
 # 2. Styling
 st.markdown("""
     <style>
-    .stButton>button { width: 100%; border-radius: 2px; height: 3.5em; background-color: #f0f2f6; font-size: 18px;}
+    .stButton>button { width: 100%; border-radius: 2px; height: 3em; background-color: #f0f2f6; font-size: 18px;}
     .input-zone { 
         padding: 15px; border: 2px solid #333; background-color: #ffffff; 
         height: 600px; overflow-y: auto; font-family: 'Courier New', monospace;
@@ -44,25 +44,37 @@ if 'step' not in st.session_state:
         'n_milestone': None, 'l_milestone': None, 's_milestone': None
     })
 
-# 4. Snapshot Logic: Captures the time as soon as the count hits 20
-def update_milestones():
-    current_ts = time.time() - st.session_state.start_time
-    all_content = st.session_state.col1 + st.session_state.col2 + st.session_state.col3
+# 4. Sequential Micro-Timing Logic
+def process_and_timestamp(units, col_id):
+    # Capture the exact moment of the batch arrival
+    batch_ts = time.time() - st.session_state.start_time
     
-    # Check Numbers
-    nums = [x for x in all_content if x.isdigit()]
-    if len(nums) >= 20 and st.session_state.n_milestone is None:
-        st.session_state.n_milestone = current_ts
+    for index, unit in enumerate(units):
+        # Apply a micro-offset (0.01s) per item to differentiate them in the timeline
+        micro_ts = batch_ts + (index * 0.01)
         
-    # Check Letters
-    lets = [x for x in all_content if x.isalpha() and len(x) == 1]
-    if len(lets) >= 20 and st.session_state.l_milestone is None:
-        st.session_state.l_milestone = current_ts
+        # Add to the appropriate column
+        if col_id == 1: st.session_state.col1.append(unit)
+        elif col_id == 2: st.session_state.col2.append(unit)
+        else: st.session_state.col3.append(unit)
         
-    # Check Shapes
-    shps = [x for x in all_content if x in ['○', '□', '△']]
-    if len(shps) >= 20 and st.session_state.s_milestone is None:
-        st.session_state.s_milestone = current_ts
+        # Immediate Milestone Evaluation
+        all_content = st.session_state.col1 + st.session_state.col2 + st.session_state.col3
+        
+        # Task 1: Numbers
+        nums = [x for x in all_content if x.isdigit()]
+        if len(nums) >= 20 and st.session_state.n_milestone is None:
+            st.session_state.n_milestone = micro_ts
+            
+        # Task 2: Letters
+        lets = [x for x in all_content if x.isalpha() and len(x) == 1]
+        if len(lets) >= 20 and st.session_state.l_milestone is None:
+            st.session_state.l_milestone = micro_ts
+            
+        # Task 3: Shapes
+        shps = [x for x in all_content if x in ['○', '□', '△']]
+        if len(shps) >= 20 and st.session_state.s_milestone is None:
+            st.session_state.s_milestone = micro_ts
 
 # --- APP FLOW ---
 
@@ -104,32 +116,20 @@ elif st.session_state.step == 'play':
             st.markdown(f"<div class='input-zone'>{items_html}</div>", unsafe_allow_html=True)
             v = st.text_input(f"In{i}", key=f"in{i}_{len(col_data)}", label_visibility="collapsed")
             if v:
-                # Delimited processing
                 units = v.upper().split() if " " in v else ([v.upper()] if v.isdigit() else list(v.upper()))
-                for unit in units:
-                    if i == 1: st.session_state.col1.append(unit)
-                    elif i == 2: st.session_state.col2.append(unit)
-                    else: st.session_state.col3.append(unit)
-                update_milestones()
+                process_and_timestamp(units, i)
                 st.rerun()
             
             sc1, sc2, sc3 = st.columns(3)
-            def add_shp(s, cid):
-                if cid == 1: st.session_state.col1.append(s)
-                elif cid == 2: st.session_state.col2.append(s)
-                else: st.session_state.col3.append(s)
-                update_milestones()
-                st.rerun()
-
-            if sc1.button("○", key=f"c{i}_s1"): add_shp("○", i)
-            if sc2.button("□", key=f"c{i}_s2"): add_shp("□", i)
-            if sc3.button("△", key=f"c{i}_s3"): add_shp("△", i)
+            if sc1.button("○", key=f"c{i}_s1"): process_and_timestamp(["○"], i); st.rerun()
+            if sc2.button("□", key=f"c{i}_s2"): process_and_timestamp(["□"], i); st.rerun()
+            if sc3.button("△", key=f"c{i}_s3"): process_and_timestamp(["△"], i); st.rerun()
 
     st.divider()
     if st.button("🏁 DONE"):
         final_time = time.time() - st.session_state.start_time
         
-        # QUALITY AUDIT (Run once at the very end)
+        # Quality Audit
         defects = 0
         if len(st.session_state.col1) != 20: defects += 1
         if len(st.session_state.col2) != 20: defects += 1
@@ -143,7 +143,6 @@ elif st.session_state.step == 'play':
             "S=20 Time": round(st.session_state.s_milestone if st.session_state.s_milestone else final_time, 2),
             "Defects": float(defects)
         })
-        st.session_state.current_run_defects = defects
         st.session_state.step = 'summary'
         st.rerun()
 
@@ -152,6 +151,7 @@ elif st.session_state.step == 'summary':
     res = st.session_state.lab_db[-1]
     
     
+
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total Lead Time", f"{res['Total Time']}s")
     c2.metric("Task 1 (Numbers)", f"{res['N=20 Time']}s")
@@ -160,18 +160,18 @@ elif st.session_state.step == 'summary':
 
     st.markdown("---")
     st.subheader("🎯 Current Run Quality Audit")
-    # THE SOURCE OF TRUTH: We check the specific run's defect count
     if res['Defects'] == 0:
         st.markdown("<p class='audit-pass'>✅ Quality Target Met: No defects detected in this specific run.</p>", unsafe_allow_html=True)
     else:
         st.markdown(f"<p class='audit-fail'>❌ Defects Found: {int(res['Defects'])}</p>", unsafe_allow_html=True)
-        st.write("Ensure each column contains exactly 20 symbols.")
 
     st.subheader("📊 Comparative Lab Data (Averages)")
     df = pd.DataFrame(st.session_state.lab_db)
     summary = df.groupby(['Participant', 'Mode']).mean(numeric_only=True).round(2)
     st.table(summary)
 
-        
+    
+    
+
     if st.button("Return to Setup"):
         st.session_state.step = 'setup'; st.rerun()
