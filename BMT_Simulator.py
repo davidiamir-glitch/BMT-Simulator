@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit.components.v1 as components
 
 # VERSION IDENTIFIER
-VERSION = "13.0 - Reconstruction Audit & Quality Report"
+VERSION = "14.0 - Symbol-by-Symbol Sequence Audit"
 
 st.set_page_config(page_title="Context Switching Lab", page_icon="🧠", layout="wide")
 
@@ -28,8 +28,8 @@ st.markdown("""
     }
     .symbol-row { margin-bottom: 2px; }
     .timer-banner { font-size: 60px; color: #ff4b4b; text-align: center; font-family: monospace; font-weight: bold; margin-bottom: 20px;}
-    .audit-pass { color: #28a745; font-weight: bold; font-size: 20px; }
-    .audit-fail { color: #dc3545; font-weight: bold; font-size: 20px; }
+    .audit-pass { color: #28a745; font-weight: bold; font-size: 24px; }
+    .audit-fail { color: #dc3545; font-weight: bold; font-size: 24px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -43,41 +43,42 @@ if 'step' not in st.session_state:
         'action_log': [], 'user_name': "", 'start_time': None
     })
 
-# 4. Deep Audit Logic
-def perform_deep_audit():
+# 4. High-Resolution Audit Logic
+def perform_final_audit():
     log = st.session_state.action_log
     
-    # Timeline Reconstruction
+    # Timeline Reconstruction using intra-batch micro-delays
+    # This prevents identical timestamps for different symbols in a single entry
     n_events = [e for e in log if e['val'].isdigit()]
     l_events = [e for e in log if e['val'].isalpha() and len(e['val']) == 1]
     s_events = [e for e in log if e['val'] in ['○', '□', '△']]
     
-    # Capture timestamp of the 20th entry for each task
+    # Result Capture
     m_n = n_events[19]['time'] if len(n_events) >= 20 else (log[-1]['time'] if log else 0)
     m_l = l_events[19]['time'] if len(l_events) >= 20 else (log[-1]['time'] if log else 0)
     m_s = s_events[19]['time'] if len(s_events) >= 20 else (log[-1]['time'] if log else 0)
     
-    # Quality Audit
+    # QUALITY AUDIT (Absolute Truth)
     defects = []
     
-    # 1. Count Audit (Target: 20 symbols per column)
-    counts = [len(st.session_state.col1), len(st.session_state.col2), len(st.session_state.col3)]
-    for i, count in enumerate(counts, 1):
-        if count != 20:
-            defects.append(f"Column {i} has {count} symbols (Target: 20)")
-            
-    # 2. Sequence Audit (Target: 1-20, A-T, ○□△ pattern)
+    # 1. Target check per column
+    if len(st.session_state.col1) != 20: defects.append(f"Col 1 Count mismatch: {len(st.session_state.col1)}")
+    if len(st.session_state.col2) != 20: defects.append(f"Col 2 Count mismatch: {len(st.session_state.col2)}")
+    if len(st.session_state.col3) != 20: defects.append(f"Col 3 Count mismatch: {len(st.session_state.col3)}")
+    
+    # 2. Content Sequence Audit
     target_n = [str(i) for i in range(1, 21)]
     target_l = list("ABCDEFGHIJKLMNOPQRST")
     target_s = (["○", "□", "△"] * 7)[:20]
     
+    # Flatten everything to verify global sequence quality
     actual_n = [e['val'] for e in log if e['val'].isdigit()]
     actual_l = [e['val'] for e in log if e['val'].isalpha() and len(e['val']) == 1]
     actual_s = [e['val'] for e in log if e['val'] in ['○', '□', '△']]
     
-    if actual_n[:20] != target_n: defects.append("Number sequence 1-20 is incorrect or incomplete.")
-    if actual_l[:20] != target_l: defects.append("Letter sequence A-T is incorrect or incomplete.")
-    if actual_s[:20] != target_s: defects.append("Shape sequence ○□△ is incorrect or incomplete.")
+    if actual_n[:20] != target_n: defects.append("Sequence Error: Numbers")
+    if actual_l[:20] != target_l: defects.append("Sequence Error: Letters")
+    if actual_s[:20] != target_s: defects.append("Sequence Error: Shapes")
     
     return m_n, m_l, m_s, defects
 
@@ -90,11 +91,12 @@ if st.session_state.step == 'setup':
     name = st.text_input("Participant Name:", placeholder="Enter name...")
     
     if st.session_state.lab_db:
-        st.subheader("📊 Historical Performance Comparison")
+        st.subheader("📊 Lab Historical Averages")
         df_h = pd.DataFrame(st.session_state.lab_db)
+        # Fix: Show numeric summary
         summary = df_h.groupby(['Participant', 'Mode']).mean(numeric_only=True).round(2)
         st.table(summary)
-        if st.button("🗑️ Clear Lab Data"):
+        if st.button("🗑️ Reset All Lab Data"):
             st.session_state.lab_db = []
             st.rerun()
 
@@ -117,10 +119,13 @@ elif st.session_state.step == 'play':
             st.markdown(f"<div class='input-zone'>{items_html}</div>", unsafe_allow_html=True)
             v = st.text_input(f"In{i}", key=f"in{i}_{len(col_data)}", label_visibility="collapsed")
             if v:
+                # Symbol-by-Symbol processing with micro-timestamp offsets to avoid time-clumping
                 ts = time.time() - st.session_state.start_time
                 units = v.upper().split() if " " in v else ([v.upper()] if v.isdigit() else list(v.upper()))
-                for unit in units:
-                    st.session_state.action_log.append({"val": unit, "col": i, "time": ts})
+                for offset, unit in enumerate(units):
+                    # Add a tiny offset for each symbol in a batch to preserve order in the timeline
+                    micro_ts = ts + (offset * 0.001) 
+                    st.session_state.action_log.append({"val": unit, "col": i, "time": micro_ts})
                     if i == 1: st.session_state.col1.append(unit)
                     elif i == 2: st.session_state.col2.append(unit)
                     else: st.session_state.col3.append(unit)
@@ -140,42 +145,46 @@ elif st.session_state.step == 'play':
 
     st.divider()
     if st.button("🏁 DONE"):
-        m_n, m_l, m_s, defects = perform_deep_audit()
+        m_n, m_l, m_s, defects = perform_final_audit()
         st.session_state.lab_db.append({
             "Participant": st.session_state.user_name, "Mode": st.session_state.mode,
             "Total Time": round(time.time() - st.session_state.start_time, 2),
-            "N=20 (Actual)": round(m_n, 2), "L=T (Actual)": round(m_l, 2), "S=20 (Actual)": round(m_s, 2),
+            "N=20 Time": round(m_n, 2), "L=T Time": round(m_l, 2), "S=20 Time": round(m_s, 2),
             "Defects": len(defects)
         })
-        st.session_state.defects = defects
+        st.session_state.current_defects = defects
         st.session_state.step = 'summary'
         st.rerun()
 
 elif st.session_state.step == 'summary':
-    st.header(f"🏁 Session Analysis: {st.session_state.user_name}")
+    st.header(f"🏁 Lab Results: {st.session_state.user_name}")
     res = st.session_state.lab_db[-1]
     
-    
+    # 1. Metrics
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total Lead Time", f"{res['Total Time']}s")
-    c2.metric("N=20 (Completion)", f"{res['N=20 (Actual)']}s")
-    c3.metric("L=T (Completion)", f"{res['L=T (Actual)']}s")
-    c4.metric("S=20 (Completion)", f"{res['S=20 (Actual)']}s")
+    c2.metric("Task 1 (Numbers)", f"{res['N=20 Time']}s")
+    c3.metric("Task 2 (Letters)", f"{res['L=T Time']}s")
+    c4.metric("Task 3 (Shapes)", f"{res['S=20 Time']}s")
 
+    # 2. Quality Report (Strict Synchronization)
     st.markdown("---")
     st.subheader("🎯 Quality Audit Report")
-    if not st.session_state.defects:
-        st.markdown("<p class='audit-pass'>✅ Quality Target Met: No defects detected.</p>", unsafe_allow_html=True)
+    if res['Defects'] == 0:
+        st.markdown("<p class='audit-pass'>✅ Quality Target Met: Zero defects detected for this run.</p>", unsafe_allow_html=True)
     else:
-        st.markdown(f"<p class='audit-fail'>❌ Quality Defects Detected: {len(st.session_state.defects)}</p>", unsafe_allow_html=True)
-        for d in st.session_state.defects:
+        st.markdown(f"<p class='audit-fail'>❌ Quality Defects Found: {int(res['Defects'])}</p>", unsafe_allow_html=True)
+        # Display the specific logic errors stored during audit
+        for d in st.session_state.current_defects:
             st.write(f"- {d}")
 
+    
+    # 3. Leaderboard
     st.subheader("📊 Comparative Lab Data")
     df = pd.DataFrame(st.session_state.lab_db)
     summary = df.groupby(['Participant', 'Mode']).mean(numeric_only=True).round(2)
     st.table(summary)
 
-    
+        
     if st.button("Return to Setup"):
         st.session_state.step = 'setup'; st.rerun()
